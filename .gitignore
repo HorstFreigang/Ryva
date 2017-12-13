@@ -1,0 +1,5 @@
+env/
+*.mp3
+*.webm
+*.txt
+.DS_Store

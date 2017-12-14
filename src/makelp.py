@@ -66,26 +66,39 @@ def create_track(args):
 		start_time = track_info[0]
 		duration = calc_duration(track_info[0], track_info[1])
 		filename = track_info[2]
+		output = str(num_zero_prefix(idx + 1)) + " - " + str(filename) + ".mp3"
 
-		cmd = ["ffmpeg", "-nostdin", "-y", "-loglevel", "quiet"]
+		cmd = ["ffmpeg", "-nostdin", "-y"]
 
+		# ffmpeg log output
+		cmd.append("-loglevel")
+
+		if args.error:
+			cmd.append("error")
+		else:
+			cmd.append("quiet")
+
+		# start time of clip
 		cmd.append("-ss")
 		cmd.append(str(start_time))
+
+		# input file
 		cmd.append("-i")
 		cmd.append(audio_source)
 
+		# duration of clip
 		if duration != "":
 			cmd.append("-t")
 			cmd.append(str(duration))
 
-		cmd.append(str(num_zero_prefix(idx + 1)) + " - " + str(filename) + ".mp3")
+		# output file
+		cmd.append(output)
 		
-		p_ffmpeg = subprocess.Popen(cmd, stdout=subprocess.PIPE)
-		while True:
-			line = p_ffmpeg.stdout.readline()
-			if not line:
-				break
-			print line
+		# frun fmpeg subprocess
+		p_ffmpeg = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
+
+		print GREEN + "Creating " + output + NC
+		
 		p_ffmpeg.wait()
 
 # main function
@@ -93,12 +106,13 @@ def main():
 	parser = argparse.ArgumentParser(description="With makelp you can extract audio clips from an audio-source. That source can be a ripped audio-track from a YoutTube video. All track infos, like start-time, end-time and song name, need to be in a seperate text file. Look for a detailed help at https://github.com/horstfreigang/makelp.")
 
 	required = parser.add_argument_group("Required arguments");
-	required.add_argument("-i", "--input", help="Audio source file", dest="audio_source", metavar="", type=str, required=False)
-	required.add_argument("-t", "--tracklist", help="Plain text file with album and track infos", dest="album_infos", metavar="", type=str, required=True)
+	required.add_argument("-i", "--input", help="Audio source file.", dest="audio_source", metavar="", type=str, required=False)
+	required.add_argument("-t", "--tracklist", help="Plain text file with album and track infos.", dest="album_infos", metavar="", type=str, required=True)
 
 	optional = parser.add_argument_group('Optional arguments');
-	optional.add_argument("-c", "--cover", help="Image file for the album cover", dest="cover", metavar="", type=str, default="")
-	optional.add_argument("-I", "--id3", metavar="", help="Write ID3v2 tags in output files")
+	optional.add_argument("-c", "--cover", help="Image file for the album cover.", dest="cover", metavar="", type=str, default="")
+	optional.add_argument("-I", "--id3", metavar="", help="Write ID3v2 tags in output files.")
+	optional.add_argument("-e", "--error", dest="error", metavar="", help="Print ffmpeg errors.", default=False)
 
 	parser.set_defaults(func=create_track)
 	args = parser.parse_args()

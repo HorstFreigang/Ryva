@@ -238,7 +238,7 @@ def process(args):
 ### Main
 
 def main():
-	parser = argparse.ArgumentParser(description="With makelp you can extract audio clips from an audio-source. That source can be a ripped audio-track from a YoutTube video. All track infos, like start-time, end-time and song name, need to be in a seperate text file. Look for a detailed help at https://github.com/horstfreigang/makelp.", add_help=False)
+	parser = argparse.ArgumentParser(description="With Ryva you can extract audio clips from an audio-source. That source can be a ripped audio-track from a YoutTube video. All track infos, like start-time, end-time and song name, need to be in a seperate text file. Look for a detailed help at https://github.com/HorstFreigang/Ryva.", add_help=False)
 
 	required = parser.add_argument_group("Required arguments");
 	required.add_argument("-i", "--input", dest="audio_source", metavar="", help="Audio source file.", type=str, required=True)

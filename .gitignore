@@ -2,4 +2,6 @@ env/
 *.mp3
 *.webm
 *.txt
+*.cue
 .DS_Store
+makelp.sh

@@ -6,9 +6,9 @@ import os, sys, re, time, argparse, subprocess
 cue = []
 album_infos = []
 output_path = ''
+is_compilation = False
 
-# text colors
-
+# Text colors
 RED = '\033[0;31m'
 GREEN = '\033[0;32m'
 BROWN = '\033[0;33m'
@@ -21,8 +21,13 @@ NC = '\033[0m'
 def create_folders(output_p):
 	global output_path
 
-	artist = album_infos[0][1]
-	album = album_infos[1][1]
+	if is_compilation:
+		artist = 'Various Artists'
+		album = album_infos[1][1]
+	else:
+		artist = album_infos[0][1]
+		album = album_infos[1][1]
+
 	output_p = output_p + '/' if output_p else ''
 
 	if not os.path.exists(output_p + artist):
@@ -38,6 +43,7 @@ def create_folders(output_p):
 ### Prepare data
 
 def prepare_data(cue_file):
+	global is_compilation
 	data = []
 	track_no = 0;
 
@@ -49,6 +55,9 @@ def prepare_data(cue_file):
 	for line in lines:
 		line = line.strip()
 
+		if re.match('compilation', line, re.I):
+			is_compilation = True
+
 		if line != '':
 			if re.search('\d{2}:', line): # Search for line which contains time
 				data.append(line.split(' '))
@@ -57,26 +66,41 @@ def prepare_data(cue_file):
 
 	# Split data in different lists
 	for index, value in enumerate(data):
-		if type(value) == list:
-			cue.append([value, data[index + 1]])
-			track_no += 1
-			album_infos.append([track_no, data[index + 1]])
-
-		if str(value).lower() == 'artist':
+		if re.match('artist', str(value), re.I):
 			album_infos.append(['artist', data[index + 1]])
 
-		if str(value).lower() == 'album':
+		if re.match('album', str(value), re.I):
 			album_infos.append(['album', data[index + 1]])
 
-		if str(value).lower() == 'genre':
+		if re.match('genre', str(value), re.I):
 			album_infos.append(['genre', data[index + 1]])
 
-		if str(value).lower() == 'year':
+		if re.match('year', str(value), re.I):
 			album_infos.append(['year', data[index + 1]])
+
+		if type(value) == list:
+			track_no += 1
+
+			if is_compilation:
+				cue.append([value, data[index + 1], data[index + 2]])
+				album_infos.append([track_no, data[index + 1], data[index + 2]])
+			else:
+				cue.append([value, data[index + 1]])
+				album_infos.append([track_no, data[index + 1]])
 
 	# print(data)
 	# print(cue)
 	# print(album_infos)
+
+
+
+### Download audio using youtube-dl
+
+def download(url):
+	cmd = ['youtube-dl', '-o', output_path + 'ryva_dl_file.%(ext)s', '-f', 'bestaudio[ext=m4a]', url]
+
+	p_dl = subprocess.Popen(cmd)
+	p_dl.wait()
 
 
 
@@ -133,7 +157,7 @@ def ffmpeg_progress(p, end_time):
 		if m_time != None:
 			percentage = int(round(100 / end_time * convert_to_sec(m_time.group(0)), 0))
 			bar = int(round(max_bar_width / 100 * percentage))
-			print('  0 % | ' + '#' * bar + '-' * (max_bar_width - bar) + ' | 100 %', end='\r')
+			print('  | ' + '#' * bar + '-' * (max_bar_width - bar) + ' | ' + str(percentage) + ' %', end='\r', flush=True)
 
 
 
@@ -141,7 +165,12 @@ def ffmpeg_progress(p, end_time):
 
 def convert_audio(source, id3):
 	for index, value in enumerate(cue):
-		output = output_path + str(num_zero_prefix(index + 1)) + ' - ' + value[1] + '.mp3'
+		if is_compilation:
+			file_name = value[1] + ' - ' + value[2] + '.mp3'
+		else:
+			file_name = value[1] + '.mp3'
+
+		output = output_path + str(num_zero_prefix(index + 1)) + ' - ' + file_name
 		cmd = ['ffmpeg', '-y', '-loglevel', 'verbose']
 
 		# Start time
@@ -231,29 +260,32 @@ def add_id3_tags(song, file):
 def process(args):
 	prepare_data(args.cue_file)
 	create_folders(args.output)
-	convert_audio(args.audio_source.strip(), args.id3)
+
+	if re.search('http', args.audio_source):
+		download(args.audio_source)
+		convert_audio(output_path + 'ryva_dl_file.m4a', args.id3)
+	else:
+		convert_audio(args.audio_source.strip(), args.id3)
 
 
 
 ### Main
 
 def main():
-	parser = argparse.ArgumentParser(description="With Ryva you can extract audio clips from an audio-source. That source can be a ripped audio-track from a YoutTube video. All track infos, like start-time, end-time and song name, need to be in a seperate text file. Look for a detailed help at https://github.com/HorstFreigang/Ryva.", add_help=False)
+	parser = argparse.ArgumentParser(description='With Ryva you can extract audio clips from an audio-source. That source can be a ripped audio-track from a YoutTube video. All track infos, like start-time, end-time and song name, need to be in a seperate text file. Look for a detailed help at https://github.com/HorstFreigang/Ryva.', add_help=False)
 
-	required = parser.add_argument_group("Required arguments");
-	required.add_argument("-i", "--input", dest="audio_source", metavar="", help="Audio source file.", type=str, required=True)
-	required.add_argument("-c", "--cue", dest="cue_file", metavar="", help="Plain text file with album and track infos. See *URL* for more information.", type=str, required=True)
+	required = parser.add_argument_group('Required arguments');
+	required.add_argument('-i', '--input', dest='audio_source', metavar='', help='Audio source file or URL.', type=str, required=True)
+	required.add_argument('-c', '--cue', dest='cue_file', metavar='', help='Plain text file with album and track infos. See *URL* for more information.', type=str, required=True)
 
 	optional = parser.add_argument_group('Optional arguments');
-	optional.add_argument("-h", "--help", action="help", help="Show this help message.")
-	optional.add_argument("-o", "--output", dest="output", metavar="", help="Path to where the tracks are saved. If no output is given all files will be saved in the current directory.", type=str)
-	optional.add_argument("-I", "--id3", dest="id3", action='store_true', help="Write ID3v2 tags to output files. Cue-file must be in proper format. See *URL* for more information.")
-	# optional.add_argument("-C", "--cover", dest="id3_cover", metavar="", help="Image file for the album cover.", type=str)
-	# optional.add_argument("-e", "--error", dest="error", metavar="", help="Print ffmpeg errors.", default=False)
+	optional.add_argument('-h', '--help', action='help', help='Show this help message.')
+	optional.add_argument('-o', '--output', dest='output', metavar='', help='Path to where the tracks are saved. If no output is given all files will be saved in the current directory.', type=str)
+	optional.add_argument('-I', '--id3', dest='id3', action='store_true', help='Write ID3v2 tags to output files. Cue-file must be in proper format. See *URL* for more information.')
 
 	parser.set_defaults(func=process)
 	args = parser.parse_args()
 	args.func(args)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
 	main()

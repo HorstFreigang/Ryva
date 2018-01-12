@@ -1,12 +1,17 @@
 #! /usr/bin/env python3
-# -*- coding: utf-8 -*-
 
 import os, sys, re, time, argparse, subprocess
+from mutagen.id3 import ID3, TALB, TYER, TCON, TCMP, TRCK, TPE1, TIT2, APIC
 
-cue = []
-album_infos = []
 output_path = ''
-is_compilation = False
+dict_cue = {
+	'compilation': 0,
+	'album': '',
+	'artist': '',
+	'genre': '',
+	'year': '',
+	'songs': []
+}
 
 # Text colors
 RED = '\033[0;31m'
@@ -21,12 +26,10 @@ NC = '\033[0m'
 def create_folders(output_p):
 	global output_path
 
-	if is_compilation:
-		artist = 'Various Artists'
-		album = album_infos[1][1]
-	else:
-		artist = album_infos[0][1]
-		album = album_infos[1][1]
+	artist = ''
+
+	artist = dict_cue['artist']
+	album = dict_cue['album']
 
 	output_p = output_p + '/' if output_p else ''
 
@@ -43,54 +46,36 @@ def create_folders(output_p):
 ### Prepare data
 
 def prepare_data(cue_file):
-	global is_compilation
-	data = []
-	track_no = 0;
+	f = open(cue_file, 'r')
+	lines = f.readlines()
+	f.close()
 
-	# Open and read cue file
-	with open(cue_file, 'r') as file:
-		lines = file.readlines()
-
-	# Fill data list with lines
-	for line in lines:
+	for i, line in enumerate(lines):
 		line = line.strip()
 
-		if re.match('compilation', line, re.I):
-			is_compilation = True
+		if re.match('#compilation', line):
+			dict_cue['compilation'] = 1
 
-		if line != '':
-			if re.search('\d{2}:', line): # Search for line which contains time
-				data.append(line.split(' '))
-			else:
-				data.append(line)
+		if re.match('#album', line):
+			dict_cue['album'] = lines[i + 1].strip()
 
-	# Split data in different lists
-	for index, value in enumerate(data):
-		if re.match('artist', str(value), re.I):
-			album_infos.append(['artist', data[index + 1]])
+		if re.search('#artist', line):
+			dict_cue['artist'] = lines[i + 1].strip()
 
-		if re.match('album', str(value), re.I):
-			album_infos.append(['album', data[index + 1]])
+		if re.match('#genre', line):
+			dict_cue['genre'] = lines[i + 1].strip()
 
-		if re.match('genre', str(value), re.I):
-			album_infos.append(['genre', data[index + 1]])
+		if re.match('#year', line):
+			dict_cue['year'] = lines[i + 1].strip()
 
-		if re.match('year', str(value), re.I):
-			album_infos.append(['year', data[index + 1]])
+		if re.match('\d{2}:', line):
+			if (i + 2) < len(lines):
+				if lines[i + 2].strip():
+					dict_cue['songs'].append([convert_to_sec(line.split(' ')), lines[i + 1].strip(), lines[i + 2].strip()])
+				else:
+					dict_cue['songs'].append([convert_to_sec(line.split(' ')), lines[i + 1].strip()])
 
-		if type(value) == list:
-			track_no += 1
-
-			if is_compilation:
-				cue.append([value, data[index + 1], data[index + 2]])
-				album_infos.append([track_no, data[index + 1], data[index + 2]])
-			else:
-				cue.append([value, data[index + 1]])
-				album_infos.append([track_no, data[index + 1]])
-
-	# print(data)
-	# print(cue)
-	# print(album_infos)
+	# print(dict_cue)
 
 
 
@@ -107,11 +92,12 @@ def download(url):
 ### Calculates duration of track
 
 def calc_duration(start, end):
-	t1 = start.split(':')
-	t2 = end.split(':')
-	s1 = int(t1[0]) * 60 + int(t1[1])
-	s2 = int(t2[0]) * 60 + int(t2[1])
-	d = s2 - s1
+	# t1 = start.split(':')
+	# t2 = end.split(':')
+	# s1 = int(t1[0]) * 60 + int(t1[1])
+	# s2 = int(t2[0]) * 60 + int(t2[1])
+	# d = s2 - s1
+	d = int(end) - int(start)
 
 	return str(d)
 
@@ -132,10 +118,26 @@ def num_zero_prefix(cnt):
 ### Convert to seconds
 
 def convert_to_sec(time):
-	digits = time[5:].split(':')
-	seconds = int(digits[0]) * 3600 + int(digits[1]) * 60 + round(float(digits[2]), 0)
+	if type(time) == list:
+		d1 = time[0].split(':')
+		if len(d1) == 3:
+			s1 = int(d1[0]) * 3600 + int(d1[1]) * 60 + round(float(d1[2]), 0)
+		else:
+			s1 = int(d1[0]) * 60 + round(float(d1[1]), 0)
+
+		d2 = time[1].split(':')
+		if len(d2) == 3:
+			s2 = int(d2[0]) * 3600 + int(d2[1]) * 60 + round(float(d2[2]), 0)
+		else:
+			s2 = int(d2[0]) * 60 + round(float(d2[1]), 0)
+
+		return [int(s1), int(s2)]
+
+	else:
+		digits = time[5:].split(':')
+		seconds = int(digits[0]) * 3600 + int(digits[1]) * 60 + round(float(digits[2]), 0)
 	
-	return int(seconds)
+		return int(seconds)
 
 
 
@@ -163,19 +165,19 @@ def ffmpeg_progress(p, end_time):
 
 ### Prepare ffmpeg
 
-def convert_audio(source, id3):
-	for index, value in enumerate(cue):
-		if is_compilation:
-			file_name = value[1] + ' - ' + value[2] + '.mp3'
+def convert_audio(source, cover):
+	for i, value in enumerate(dict_cue['songs']):
+		if dict_cue['compilation']:
+			file_name = re.sub('/', '_', value[1]) + ' - ' + re.sub('/', '_', value[2]) + '.mp3'
 		else:
-			file_name = value[1] + '.mp3'
+			file_name = re.sub('/', '_', value[1]) + '.mp3'
 
-		output = output_path + str(num_zero_prefix(index + 1)) + ' - ' + file_name
+		output = output_path + str(num_zero_prefix(i + 1)) + ' - ' + file_name
 		cmd = ['ffmpeg', '-y', '-loglevel', 'verbose']
 
 		# Start time
 		cmd.append('-ss')
-		cmd.append(value[0][0])
+		cmd.append(str(value[0][0]))
 
 		# Input file
 		cmd.append('-i')
@@ -214,44 +216,47 @@ def convert_audio(source, id3):
 		sys.stdout.write('\x1b[2K') # Erease line
 		print(GREEN + 'OK' + NC + '\n')
 
-		if id3:
-			add_id3_tags(value[1], output)
+		# add_id3_tags(i, output, cover)
 
 
 
 ### ID3v2 tags
 
-def add_id3_tags(song, file):
-	cmd = ['id3v2']
-	
-	for value in album_infos:
-		if value[0] == 'artist':
-			cmd.append('--artist')
-			cmd.append(value[1])
+def add_id3_tags(t, file, cover):
+	audio = ID3(file)
 
-		if value[0] == 'album':
-			cmd.append('--album')
-			cmd.append(value[1])
+	# album
+	audio.add(TALB(encoding=3, text=u'' + dict_cue['album']))
 
-		if value[0] == 'genre':
-			cmd.append('--genre')
-			cmd.append(value[1])
+	# genre
+	audio.add(TCON(encoding=3, text=u'' + dict_cue['genre']))
 
-		if value[0] == 'year':
-			cmd.append('--year')
-			cmd.append(value[1])
+	# year
+	audio.add(TYER(encoding=3, text=u'' + dict_cue['year']))
 
-		if value[1] == song:
-			cmd.append('--song')
-			cmd.append(song)
-			cmd.append('--track')
-			cmd.append(str(value[0]))
+	# compilation
+	audio.add(TCMP(encoding=3, text=u'' + str(dict_cue['compilation'])))
 
-	cmd.append(file)
+	# track number
+	audio.add(TRCK(encoding=3, text=u'' + str(t+1) + '/' + str(len(dict_cue['songs']))))
 
-	# print(cmd)
+	# artist
+	if len(dict_cue['songs'][t]) == 3:
+		audio.add(TPE1(encoding=3, text=u'' + dict_cue['songs'][t][1]))
+	else:
+		audio.add(TPE1(encoding=3, text=u'' + dict_cue['artist']))
 
-	p_id3 = subprocess.Popen(cmd)
+	# song title
+	if len(dict_cue['songs'][t]) == 3:
+		audio.add(TIT2(encoding=3, text=u'' + dict_cue['songs'][t][2]))
+	else:
+		audio.add(TIT2(encoding=3, text=u'' + dict_cue['songs'][t][1]))
+
+	# cover
+	if cover:
+		audio.add(APIC(encoding=3, mime='image/jpeg', type=3, desc=u'Cover', data=open(cover, 'rb').read()))
+
+	audio.save()
 
 
 
@@ -263,9 +268,9 @@ def process(args):
 
 	if re.search('http', args.audio_source):
 		download(args.audio_source)
-		convert_audio(output_path + 'ryva_dl_file.m4a', args.id3)
+		convert_audio(output_path + 'ryva_dl_file.m4a', args.id3_cover)
 	else:
-		convert_audio(args.audio_source.strip(), args.id3)
+		convert_audio(args.audio_source.strip(), args.id3_cover)
 
 
 
@@ -281,7 +286,7 @@ def main():
 	optional = parser.add_argument_group('Optional arguments');
 	optional.add_argument('-h', '--help', action='help', help='Show this help message.')
 	optional.add_argument('-o', '--output', dest='output', metavar='', help='Path to where the tracks are saved. If no output is given all files will be saved in the current directory.', type=str)
-	optional.add_argument('-I', '--id3', dest='id3', action='store_true', help='Write ID3v2 tags to output files. Cue-file must be in proper format. See *URL* for more information.')
+	optional.add_argument('-C', '--cover', dest='id3_cover', metavar='', help='Path to image file, which should be used as an attachment image. Should be an JPEG.')
 
 	parser.set_defaults(func=process)
 	args = parser.parse_args()

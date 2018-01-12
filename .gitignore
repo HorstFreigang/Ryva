@@ -1,5 +1,7 @@
 env/
 *.mp3
+*.m4a
+*.jpg
 *.webm
 *.txt
 *.cue

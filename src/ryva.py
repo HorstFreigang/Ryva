@@ -216,7 +216,7 @@ def convert_audio(source, cover):
 		sys.stdout.write('\x1b[2K') # Erease line
 		print(GREEN + 'OK' + NC + '\n')
 
-		# add_id3_tags(i, output, cover)
+		add_id3_tags(i, output, cover)
 
 
 
